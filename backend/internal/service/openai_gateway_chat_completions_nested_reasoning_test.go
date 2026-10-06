@@ -38,51 +38,57 @@ func TestForwardAsChatCompletions_OAuthForwardsNestedReasoningEffort(t *testing.
 		{"nested_medium", `"reasoning":{"effort":"medium"}`, "medium"},
 		{"flat_high", `"reasoning_effort":"high"`, "high"},
 		{"nested_wins_over_flat", `"reasoning_effort":"high","reasoning":{"effort":"medium"}`, "medium"},
+		{"nested_high", `"reasoning":{"effort":"high"}`, "high"},
+		{"nested_xhigh", `"reasoning":{"effort":"xhigh"}`, "xhigh"},
+		{"nested_max", `"reasoning":{"effort":"max"}`, "max"},
+		{"flat_max", `"reasoning_effort":"max"`, "max"},
 		{"absent", ``, ""},
 	}
-	for _, stream := range []bool{false, true} {
-		for _, tc := range cases {
-			t.Run(fmt.Sprintf("stream=%t/%s", stream, tc.name), func(t *testing.T) {
-				extra := ""
-				if tc.reasoning != "" {
-					extra = "," + tc.reasoning
-				}
-				body := []byte(fmt.Sprintf(`{"model":"gpt-6-sol","stream":%t,"messages":[{"role":"user","content":"hello"}]%s}`, stream, extra))
+	for _, model := range []string{"gpt-6-sol", "gpt-6.1-sol"} {
+		for _, stream := range []bool{false, true} {
+			for _, tc := range cases {
+				t.Run(fmt.Sprintf("%s/stream=%t/%s", model, stream, tc.name), func(t *testing.T) {
+					extra := ""
+					if tc.reasoning != "" {
+						extra = "," + tc.reasoning
+					}
+					body := []byte(fmt.Sprintf(`{"model":%q,"stream":%t,"messages":[{"role":"user","content":"hello"}]%s}`, model, stream, extra))
 
-				rec := httptest.NewRecorder()
-				c, _ := gin.CreateTestContext(rec)
-				c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
-				c.Request.Header.Set("Content-Type", "application/json")
+					rec := httptest.NewRecorder()
+					c, _ := gin.CreateTestContext(rec)
+					c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+					c.Request.Header.Set("Content-Type", "application/json")
 
-				upstream := &httpUpstreamRecorder{resp: &http.Response{
-					StatusCode: http.StatusOK,
-					Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_nested_reasoning"}},
-					Body:       io.NopCloser(strings.NewReader(nestedReasoningUpstreamSSE)),
-				}}
-				svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
-				account := &Account{
-					ID: 7, Name: "openai-oauth", Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1,
-					Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
-				}
+					upstream := &httpUpstreamRecorder{resp: &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_nested_reasoning"}},
+						Body:       io.NopCloser(strings.NewReader(nestedReasoningUpstreamSSE)),
+					}}
+					svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+					account := &Account{
+						ID: 7, Name: "openai-oauth", Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1,
+						Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+					}
 
-				result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
-				require.NoError(t, err)
-				require.NotNil(t, result)
-				require.NotEmpty(t, upstream.lastBody)
+					result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+					require.NoError(t, err)
+					require.NotNil(t, result)
+					require.NotEmpty(t, upstream.lastBody)
 
-				// 1. What actually went upstream.
-				require.Equal(t, tc.want, gjson.GetBytes(upstream.lastBody, "reasoning.effort").String(), "upstream body: %s", upstream.lastBody)
-				if tc.want == "" {
-					require.False(t, gjson.GetBytes(upstream.lastBody, "reasoning.effort").Exists())
-				} else {
-					require.Equal(t, "auto", gjson.GetBytes(upstream.lastBody, "reasoning.summary").String())
-				}
-				// 2. Accounting matches the forwarded effort.
-				require.Equal(t, tc.want, optionalStringValue(result.ReasoningEffort))
-				// 3. Reasoning reaches the Chat client.
-				require.Contains(t, rec.Body.String(), "reasoning_content")
-				require.Contains(t, rec.Body.String(), "weighing options")
-			})
+					// 1. What actually went upstream.
+					require.Equal(t, tc.want, gjson.GetBytes(upstream.lastBody, "reasoning.effort").String(), "upstream body: %s", upstream.lastBody)
+					if tc.want == "" {
+						require.False(t, gjson.GetBytes(upstream.lastBody, "reasoning.effort").Exists())
+					} else {
+						require.Equal(t, "auto", gjson.GetBytes(upstream.lastBody, "reasoning.summary").String())
+					}
+					// 2. Accounting matches the forwarded effort.
+					require.Equal(t, tc.want, optionalStringValue(result.ReasoningEffort))
+					// 3. Reasoning reaches the Chat client.
+					require.Contains(t, rec.Body.String(), "reasoning_content")
+					require.Contains(t, rec.Body.String(), "weighing options")
+				})
+			}
 		}
 	}
 }
