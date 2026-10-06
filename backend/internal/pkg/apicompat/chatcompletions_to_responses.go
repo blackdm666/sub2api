@@ -18,6 +18,10 @@ type chatMessageContent struct {
 // true. store is always false and reasoning.encrypted_content is always
 // included so that the response translator has full context.
 func ChatCompletionsToResponses(req *ChatCompletionsRequest) (*ResponsesRequest, error) {
+	// Fold nested reasoning.effort into the flat field so validation, sampling
+	// filtering and the upstream reasoning block all see the same effort.
+	req.ReasoningEffort = req.EffectiveReasoningEffort()
+	req.Reasoning = nil
 	if err := openai.ValidateGPT61SolReasoningEffort(req.Model, req.ReasoningEffort); err != nil {
 		return nil, err
 	}
