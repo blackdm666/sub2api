@@ -690,8 +690,8 @@ type ChatCompletionsRequest struct {
 	ToolChoice          json.RawMessage    `json:"tool_choice,omitempty"`
 	ReasoningEffort     string             `json:"reasoning_effort,omitempty"` // "low" | "medium" | "high" | "xhigh"
 	// Reasoning accepts the Responses-style nested form ({"reasoning":{"effort":...}})
-	// that some Chat clients send. It is folded into ReasoningEffort by
-	// EffectiveReasoningEffort; nested wins, matching inbound accounting.
+	// that some Chat clients send. EffectiveReasoningEffort gives the nested
+	// value precedence, matching inbound accounting, without mutating either field.
 	Reasoning      *ChatReasoning  `json:"reasoning,omitempty"`
 	ServiceTier    string          `json:"service_tier,omitempty"`
 	Stop           json.RawMessage `json:"stop,omitempty"` // string or []string
